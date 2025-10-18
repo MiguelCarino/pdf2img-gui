@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PDF → Image Converter (PNG / JPEG / WebP)</title>
+  <meta name="description" content="Convert PDF pages to images (PNG, JPEG, WebP) entirely in your browser. No uploads. Drag & drop supported." />
+  <!-- Libraries: pdf.js, JSZip, FileSaver -->
+  <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+  <script>
+    // Tell pdf.js where to find its worker file (same CDN & version)
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"></script>
+  <style>
+    :root{
+      /* macOS Tahoe-style glass theme */
+      --bg: #e9eef6;           /* misty light */
+      --card: rgba(255,255,255,0.55);
+      --muted: #4b5563;        /* gray-600 */
+      --text: #0b1220;         /* deep slate */
+      --brand: #0A84FF;        /* macOS blue */
+      --brand-2: #5AC8FA;      /* macOS cyan */
+      --ok: #34C759;           /* macOS green */
+      --warn: #FF9F0A;         /* macOS orange */
+      --err: #FF453A;          /* macOS red */
+      --radius: 16px;
+      --shadow: 0 30px 60px rgba(0,0,0,.15), 0 8px 18px rgba(0,0,0,.08);
+    }
+    *{box-sizing:border-box}
+    html,body{
+      margin:0; background: radial-gradient(1200px 600px at 10% -10%, rgba(10,132,255,.18), transparent),
+                              radial-gradient(1000px 800px at 120% 20%, rgba(90,200,250,.12), transparent),
+                              var(--bg);
+      color:var(--text); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Inter, "Helvetica Neue", Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      display:flex; flex-direction:column; gap:18px; padding:20px;
+    }
+    body{
+      margin:0; background: radial-gradient(1200px 600px at 10% -10%, rgba(124,58,237,.18), transparent),
+                              radial-gradient(1000px 800px at 120% 20%, rgba(34,211,238,.12), transparent),
+                              var(--bg);
+      color:var(--text); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Inter, "Helvetica Neue", Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      display:flex; flex-direction:column; gap:18px; padding:20px;
+    }
+    header{display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap}
+    h1{font-size:clamp(20px, 4vw, 32px); margin:0; letter-spacing:.2px}
+    .sub{color:var(--muted); font-size:14px}
+
+    .wrap{display:flex; flex-direction:column; gap:16px}
+    @media (max-width: 980px){
+      .wrap{grid-template-columns: 1fr}
+    }
+
+    .panel{background:var(--card); backdrop-filter:saturate(180%) blur(20px); -webkit-backdrop-filter:saturate(180%) blur(20px); border:1px solid rgba(255,255,255,.45); border-radius:var(--radius); box-shadow:var(--shadow)}
+    .pad{padding:18px}
+
+    .dropzone{border: 2px dashed rgba(10,132,255,.55); background: rgba(10,132,255,.08); border-radius: calc(var(--radius) - 6px); padding: 18px; text-align:center; cursor:pointer; transition:.2s ease; display:flex; align-items:center; justify-content:center; min-height:110px;}
+    .dropzone:hover{background: rgba(10,132,255,.14)}
+    .dropzone.drag{outline:3px solid var(--brand); background: rgba(90,200,250,.18)}
+    .dz-title{font-weight:600}
+    .dz-sub{font-size:12px; color:var(--muted)}
+
+    label{display:block; font-size:12px; color:var(--muted); margin:12px 0 6px}
+    select, input[type="number"], input[type="text"], input[type="checkbox"]{width:100%; padding:12px 14px; border-radius:12px; border:1px solid rgba(0,0,0,.06); background:rgba(255,255,255,.80); color:var(--text); box-shadow: inset 0 1px 0 rgba(255,255,255,.7);}
+    .row{display:grid; grid-template-columns:1fr 1fr; gap:10px}
+    .hint{font-size:12px; color:var(--muted)}
+
+    .actions{display:flex; gap:10px; flex-wrap:wrap; margin-top:14px}
+    button{
+      appearance:none; border:0; padding:10px 14px; border-radius:12px; cursor:pointer; font-weight:600;
+      background: linear-gradient(180deg, var(--brand), #6d28d9); color:white; box-shadow: 0 4px 18px rgba(124,58,237,.35);
+    }
+    button[disabled]{opacity:.5; cursor:not-allowed; filter:grayscale(1)}
+    .btn-secondary{background: linear-gradient(180deg, rgba(255,255,255,.95), rgba(255,255,255,.85)); color:#0b1220; box-shadow:0 2px 8px rgba(0,0,0,.08); border:1px solid rgba(0,0,0,.06)}
+    .btn-ghost{background: transparent; color:#0b1220; border:1px dashed rgba(0,0,0,.15)}
+
+    .out{min-height:160px}
+    .grid{
+      display:grid; gap:12px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    }
+    .card{background:rgba(255,255,255,.03); border:1px solid rgba(255,255,255,.07); border-radius:12px; overflow:hidden}
+    .thumb{background:rgba(255,255,255,.65); backdrop-filter: blur(8px); display:grid; place-items:center; max-height:60vh; overflow:hidden;}
+    .thumb img{max-width:100%; height:auto; display:block; max-height:60vh; object-fit:contain}
+    .meta{display:flex; align-items:center; justify-content:space-between; gap:8px; padding:10px 12px; font-size:12px; color:var(--muted)}
+    .meta .left{display:flex; gap:6px; align-items:center}
+    .chip{padding:2px 8px; border-radius:999px; background:rgba(124,58,237,.15); color:#d8b4fe; font-weight:700}
+
+    progress{width:100%; height:12px; border-radius:12px; overflow:hidden; appearance:none}
+    progress::-webkit-progress-bar{background:#0b1220; border-radius:12px}
+    progress::-webkit-progress-value{background: linear-gradient(90deg, var(--brand), var(--brand-2))}
+    .status{font-size:12px; color:var(--muted); margin-top:6px}
+
+    footer{opacity:.8; font-size:12px; color:var(--muted); text-align:center; margin-top:auto}
+    .kbd{font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; background:#0b1220; border:1px solid rgba(255,255,255,.08); padding:2px 6px; border-radius:6px}
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>PDF → Image Converter</h1>
+      <div class="sub">Convert every page of a PDF into <strong>PNG</strong>, <strong>JPEG</strong> or <strong>WebP</strong> — fully offline, in your browser.</div>
+    </div>
+    <div class="sub">Tip: Drop a file anywhere or press <span class="kbd">Ctrl/Cmd + O</span></div>
+  </header>
+
+  <div class="wrap">
+    <!-- LEFT: Controls -->
+    <section class="panel pad" id="controls">
+      <div id="drop" class="dropzone" tabindex="0" role="button" aria-label="Upload or drop PDF">
+        <div>
+          <div class="dz-title">Drop your PDF here</div>
+          <div class="dz-sub">…or click to choose a file</div>
+        </div>
+        <input id="file" type="file" accept="application/pdf" hidden />
+      </div>
+
+      <label for="format">Output format</label>
+      <select id="format">
+        <option value="image/png">PNG (lossless)</option>
+        <option value="image/jpeg">JPEG (lossy)</option>
+        <option value="image/webp">WebP (small / modern)</option>
+      </select>
+
+      <div class="row">
+        <div>
+          <label for="quality">Quality (JPEG/WebP)</label>
+          <input id="quality" type="number" min="10" max="100" step="5" value="90" />
+        </div>
+        <div>
+          <label for="scale">Scale / DPI</label>
+          <input id="scale" type="number" min="50" max="600" step="25" value="200" />
+          <div class="hint">~200 DPI is a good balance</div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label for="pagerange">Pages</label>
+          <input id="pagerange" type="text" placeholder="e.g. 1,3-5 (blank = all)" />
+        </div>
+        <div>
+          <label for="bgtransparent">Transparency (PNG/WebP)</label>
+          <select id="bgtransparent">
+            <option value="transparent">Transparent</option>
+            <option value="white" selected>White background</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button id="convert" disabled>Convert PDF</button>
+        <button id="downloadAll" class="btn-secondary" disabled>Download all (ZIP)</button>
+        <button id="clear" class="btn-ghost">Clear</button>
+      </div>
+
+      <div style="margin-top:14px">
+        <progress id="prog" max="100" value="0" hidden></progress>
+        <div id="status" class="status"></div>
+      </div>
+    </section>
+
+    <!-- RIGHT: Output / Thumbs -->
+    <section class="panel pad out">
+      <div class="hint" id="help">Converted pages will appear here as thumbnails with per‑page download buttons.</div>
+      <div class="grid" id="grid"></div>
+    </section>
+  </div>
+
+  <footer>
+    Works completely offline. Your files never leave your device. Built with pdf.js.
+  </footer>
+
+  <script>
+    // DOM refs
+    const fileInput = document.getElementById('file');
+    const dropzone  = document.getElementById('drop');
+    const btnConvert = document.getElementById('convert');
+    const btnAll = document.getElementById('downloadAll');
+    const btnClear = document.getElementById('clear');
+    const grid = document.getElementById('grid');
+    const help = document.getElementById('help');
+    const prog = document.getElementById('prog');
+    const status = document.getElementById('status');
+
+    const fmtSel = document.getElementById('format');
+    const qualInp = document.getElementById('quality');
+    const scaleInp = document.getElementById('scale');
+    const rangeInp = document.getElementById('pagerange');
+    const bgSel = document.getElementById('bgtransparent');
+
+    let pdfBytes = null;      // Uint8Array of the loaded PDF
+    let pdfName = 'document'; // base name
+    let renderResults = [];   // { index, dataUrl, blob, w, h, canvas }   // { index, dataUrl, blob }
+
+    // Util: name base from file
+    function nameBaseFrom(file){
+      const base = (file?.name || 'document').replace(/\.[^.]+$/, '');
+      return base || 'document'
+    }
+
+    // Dropzone interactions
+    dropzone.addEventListener('click', () => fileInput.click());
+    dropzone.addEventListener('keydown', (e) => { if(e.key==='Enter' || e.key===' '){ e.preventDefault(); fileInput.click(); } });
+
+    ;['dragenter','dragover'].forEach(ev => dropzone.addEventListener(ev, e => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; dropzone.classList.add('drag'); }));
+    ;['dragleave','drop'].forEach(ev => dropzone.addEventListener(ev, e => { e.preventDefault(); dropzone.classList.remove('drag'); }));
+
+    dropzone.addEventListener('drop', async (e) => {
+      const f = e.dataTransfer.files?.[0];
+      if (f) await loadPDFFile(f);
+    });
+
+    fileInput.addEventListener('change', async (e) => {
+      const f = e.target.files?.[0];
+      if (f) await loadPDFFile(f);
+    });
+
+    async function loadPDFFile(file){
+      if (!file || file.type !== 'application/pdf'){
+        toast('Please choose a PDF file.', 'err');
+        return;
+      }
+      pdfBytes = new Uint8Array(await file.arrayBuffer());
+      pdfName = nameBaseFrom(file);
+      btnConvert.disabled = false;
+      help.textContent = `Loaded: ${file.name} (${(file.size/1024/1024).toFixed(2)} MB)`;
+      grid.innerHTML=''; renderResults = []; btnAll.disabled = true;
+      status.textContent = '';
+    }
+
+    // Parse page range string like "1,3-5,8"
+    function parseRange(str, total){
+      if(!str) return Array.from({length: total}, (_,i)=>i+1);
+      const out = new Set();
+      for(const chunk of str.split(',')){
+        const t = chunk.trim(); if(!t) continue;
+        if(t.includes('-')){
+          const [a,b] = t.split('-').map(n=>parseInt(n,10));
+          if(!Number.isFinite(a) || !Number.isFinite(b)) continue;
+          const start = Math.max(1, Math.min(a,b));
+          const end   = Math.min(total, Math.max(a,b));
+          for(let i=start;i<=end;i++) out.add(i);
+        } else {
+          const n = parseInt(t,10);
+          if(Number.isFinite(n) && n>=1 && n<=total) out.add(n);
+        }
+      }
+      return Array.from(out).sort((a,b)=>a-b);
+    }
+
+    // Render a page to a canvas at given scale (DPI-ish)
+    async function renderPageToCanvas(pdf, pageNum, dpi){
+      const page = await pdf.getPage(pageNum);
+      // pdf.js scale: pixels = points * scale (72 points = 1 inch). So scale = dpi / 72.
+      const scale = Math.max(50, Math.min(dpi, 600)) / 72;
+      const viewport = page.getViewport({ scale });
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d', { willReadFrequently:false });
+      canvas.width = Math.floor(viewport.width);
+      canvas.height = Math.floor(viewport.height);
+
+      // Optional background color handling for transparency/white
+      if (bgSel.value === 'white'){
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0,0,canvas.width, canvas.height);
+      } else {
+        // default transparent
+        ctx.clearRect(0,0,canvas.width, canvas.height);
+      }
+
+      await page.render({ canvasContext: ctx, viewport }).promise;
+      return canvas;
+    }
+
+    function dataURLToBlob(dataURL){
+      const [meta, data] = dataURL.split(',');
+      const mime = meta.match(/:(.*?);/)[1];
+      const binStr = atob(data);
+      const len = binStr.length;
+      const arr = new Uint8Array(len);
+      for(let i=0;i<len;i++) arr[i] = binStr.charCodeAt(i);
+      return new Blob([arr], {type:mime});
+    }
+
+    function extFromMime(m){
+      return m === 'image/png' ? 'png' : m === 'image/jpeg' ? 'jpg' : 'webp';
+    }
+
+    function toast(msg, type='ok'){
+      status.textContent = msg;
+      status.style.color = type==='err' ? '#fecaca' : type==='warn' ? '#fde68a' : '#a7f3d0';
+    }
+
+    btnConvert.addEventListener('click', async () => {
+      if(!pdfBytes){ toast('Load a PDF first.', 'warn'); return; }
+      btnConvert.disabled = true; btnAll.disabled = true;
+      grid.innerHTML = ''; renderResults = [];
+      prog.hidden = false; prog.value = 0; toast('Parsing PDF…');
+
+      try{
+        const pdf = await pdfjsLib.getDocument({ data: pdfBytes }).promise;
+        const total = pdf.numPages;
+        const wanted = parseRange(rangeInp.value, total);
+        if (wanted.length === 0){ toast('No valid pages selected.', 'warn'); btnConvert.disabled = false; prog.hidden = true; return; }
+
+        const mime = fmtSel.value;
+        const ext = extFromMime(mime);
+        const quality = Math.max(10, Math.min(100, parseInt(qualInp.value||90,10))) / 100;
+        const dpi = Math.max(50, Math.min(600, parseInt(scaleInp.value||200,10)));
+
+        // Progressive rendering to keep UI responsive
+        let done = 0;
+        for (const p of wanted){
+          toast(`Rendering page ${p} of ${total}…`);
+          const canvas = await renderPageToCanvas(pdf, p, dpi);
+          let dataUrl;
+          if (mime === 'image/png'){
+            dataUrl = canvas.toDataURL('image/png'); // quality ignored
+          } else {
+            dataUrl = canvas.toDataURL(mime, quality);
+          }
+          const blob = dataURLToBlob(dataUrl);
+          renderResults.push({ index: p, dataUrl, blob, w: canvas.width, h: canvas.height, canvas });
+          addThumb({ index: p, dataUrl, blob, ext, w: canvas.width, h: canvas.height, canvas });
+          done++; prog.value = Math.round(done / wanted.length * 100);
+          await new Promise(r => setTimeout(r)); // yield to UI
+        }
+
+        btnAll.disabled = renderResults.length === 0;
+        toast(`Done! Rendered ${renderResults.length} page(s).`);
+      } catch (err){
+        console.error(err);
+        toast('Failed to process PDF. Is it encrypted or damaged?', 'err');
+      } finally {
+        btnConvert.disabled = false; prog.hidden = true;
+      }
+    });
+
+    function addThumb({ index, dataUrl, blob, ext, w, h, canvas }){
+      if (help) { try { help.remove(); } catch(e){} }
+      const card = document.createElement('div');
+      card.className = 'card';
+      const img = document.createElement('img');
+      img.loading = 'lazy'; img.src = dataUrl; img.alt = `Page ${index}`;
+      const thumb = document.createElement('div');
+      thumb.className = 'thumb'; thumb.appendChild(img);
+
+      const meta = document.createElement('div');
+      meta.className = 'meta';
+      const left = document.createElement('div'); left.className = 'left';
+      const chip = document.createElement('span'); chip.className = 'chip'; chip.textContent = `#${index}`;
+      const dim = document.createElement('span'); dim.textContent = `${w}×${h}`;
+      left.append(chip, dim);
+
+      const controls = document.createElement('div');
+      controls.style = 'padding:10px 12px; display:grid; gap:8px; grid-template-columns: 1fr auto; align-items:center;';
+
+      const sizeWrap = document.createElement('div');
+      sizeWrap.style = 'display:flex; gap:8px; align-items:center; flex-wrap:wrap;';
+
+      // Presets based on aspect (fit width)
+      const presets = [512, 1024, 2048].filter(px => px < w);
+      const sel = document.createElement('select');
+      sel.innerHTML = `
+        <option value="1">Original (${w}×${h})</option>
+        <option value="0.75">75% (${Math.round(w*0.75)}×${Math.round(h*0.75)})</option>
+        <option value="0.5">50% (${Math.round(w*0.5)}×${Math.round(h*0.5)})</option>
+        <option value="0.33">33% (${Math.round(w*0.33)}×${Math.round(h*0.33)})</option>
+        ${presets.map(px=>`<option value="w:${px}">Fit ${px}px width (${px}×${Math.round(h*(px/w))})</option>`).join('')}
+      `;
+      sel.style = 'padding:10px 12px; border-radius:10px; border:1px solid rgba(0,0,0,.08); background:rgba(255,255,255,.9); color:#0b1220;';
+
+      const customW = document.createElement('input');
+      customW.type = 'number'; customW.placeholder = 'Custom width (px)'; customW.min = 64; customW.style = 'width: 180px; padding:10px 12px; border-radius:10px; border:1px solid rgba(0,0,0,.08); background:rgba(255,255,255,.9); color:#0b1220;';
+
+      const info = document.createElement('span');
+      info.className = 'hint';
+      info.textContent = `.${ext}`;
+
+      sizeWrap.append(sel, customW, info);
+
+      const dl = document.createElement('button');
+      dl.className = 'btn-secondary'; dl.textContent = 'Download';
+      dl.addEventListener('click', async () => {
+        const mime = fmtSel.value;
+        const quality = Math.max(10, Math.min(100, parseInt(qualInp.value||90,10))) / 100;
+        let targetW = w;
+        if (sel.value.startsWith('w:')) {
+          targetW = Math.min(w, parseInt(sel.value.slice(2),10));
+        } else {
+          const mul = parseFloat(sel.value || '1');
+          targetW = Math.round(w * mul);
+        }
+        if (customW.value) targetW = Math.max(64, Math.min(w, parseInt(customW.value,10)));
+        const outBlob = await exportResized(canvas, mime, quality, targetW);
+        const name = `${pdfName}-p${String(index).padStart(3,'0')}${targetW && targetW!==w?`-${targetW}w`:''}.${ext}`;
+        saveAs(outBlob, name);
+      });
+
+      controls.append(sizeWrap, dl);
+
+      card.append(thumb, meta, controls);
+      grid.append(card);
+    }
+
+    async function exportResized(srcCanvas, mime, quality, targetWidth){
+      const tw = Math.max(1, Math.min(srcCanvas.width, targetWidth||srcCanvas.width));
+      const th = Math.round(srcCanvas.height * (tw / srcCanvas.width));
+      if (tw === srcCanvas.width) {
+        return await new Promise(res => srcCanvas.toBlob(res, mime === 'image/png' ? 'image/png' : mime, mime==='image/png'?undefined:quality));
+      }
+      const out = document.createElement('canvas');
+      out.width = tw; out.height = th;
+      const ctx = out.getContext('2d');
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(srcCanvas, 0, 0, tw, th);
+      return await new Promise(res => out.toBlob(res, mime === 'image/png' ? 'image/png' : mime, mime==='image/png'?undefined:quality));
+    }
+
+    btnAll.addEventListener('click', async () => {
+      if(renderResults.length === 0) return;
+      btnAll.disabled = true; toast('Zipping images…');
+      try{
+        const zip = new JSZip();
+        const ext = extFromMime(fmtSel.value);
+        for (const { index, blob } of renderResults){
+          zip.file(`${pdfName}-p${String(index).padStart(3,'0')}.${ext}`, blob);
+        }
+        const content = await zip.generateAsync({ type: 'blob' });
+        saveAs(content, `${pdfName}_${renderResults.length}pages.zip`);
+        toast('ZIP ready.');
+      } catch (e){
+        console.error(e); toast('Could not create ZIP.', 'err');
+      } finally { btnAll.disabled = false; }
+    });
+
+    btnClear.addEventListener('click', () => {
+      pdfBytes = null; renderResults = []; pdfName = 'document';
+      grid.innerHTML = ''; help.textContent = 'Converted pages will appear here as thumbnails with per‑page download buttons.';
+      btnConvert.disabled = true; btnAll.disabled = true; status.textContent = ''; prog.hidden = true; prog.value = 0;
+      fileInput.value = '';
+    });
+
+    // Global shortcut: Ctrl/Cmd+O to open file picker
+    window.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o'){
+        e.preventDefault(); fileInput.click();
+      }
+    });
+
+    // Enable/disable transparency selector by format
+    fmtSel.addEventListener('change', () => {
+      const allowsAlpha = ['image/png','image/webp'].includes(fmtSel.value);
+      bgSel.disabled = !allowsAlpha; if(!allowsAlpha) bgSel.value = 'white';
+    });
+    fmtSel.dispatchEvent(new Event('change'));
+  </script>
+</body>
+</html>
