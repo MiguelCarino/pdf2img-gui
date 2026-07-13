@@ -227,6 +227,7 @@
     progress::-webkit-progress-bar { background-color: #e2e8f0; }
     progress::-webkit-progress-value { background-color: var(--primary); border-radius: 99px; }
     .status-text { font-size: 12px; text-align: center; margin-top: 8px; color: var(--text-muted); min-height: 18px;}
+    .status-text:empty { display: none; margin-top: 0; }
 
     /* Right Panel (Grid) */
     .grid-header h2 { margin-bottom: 20px; font-size: 18px; }
@@ -286,15 +287,6 @@
       color: var(--fg-primary); text-shadow: var(--title-glow, none); margin-bottom: 0.5rem;
     }
     .brand-sub { font-size: 0.95rem; color: var(#0078d4); margin-bottom: 1.2rem; font-weight: 500; }
-    .brand-links { display: flex; gap: 0.95rem; }
-    
-    .social-btn {
-      width: 40px; height: 40px; display: flex; align-items: center; justify-content: center;
-      background: rgba(125,125,125,0.1); border-radius: 10px; color: var(#0078d4);
-      border: 1px solid transparent; transition: 0.2s; margin: 6px ;
-    }
-
-    .social-btn:hover { transform: translateY(-3px); color: var(#005a9e); }
   </style>
 </head>
 <body>
@@ -369,21 +361,12 @@
       </div>
     </div>
 
-    <div class="action-area" style="margin-top:auto">
+    <div class="action-area">
       <button id="convert" class="btn-primary" disabled>Convert PDF</button>
       <button id="downloadAll" class="btn-success" disabled>Download ZIP</button>
+      <div class="status-text" id="status"></div>
+      <progress id="prog" max="100" value="0" hidden></progress>
     </div>
-    
-    <div class="status-text" id="status"></div>
-    <progress id="prog" max="100" value="0" hidden></progress>
-     <div class="brand-links">
-            <a href="https://github.com/MiguelCarino/" target="_blank" class="social-btn" aria-label="GitHub">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path></svg>
-            </a>
-            <a href="https://www.linkedin.com/in/miguelcarino94/" target="_blank" class="social-btn" aria-label="LinkedIn">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z"></path><rect x="2" y="9" width="4" height="12"></rect><circle cx="4" cy="4" r="2"></circle></svg>
-            </a>
-     </div>
   </aside>
 
   <main id="results-area">
@@ -622,5 +605,6 @@
   });
 
 </script>
+  <script src="carino-navbar.js" data-app="PDF2IMG" defer></script>
 </body>
 </html>
